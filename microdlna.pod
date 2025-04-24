@@ -1,0 +1,146 @@
+=head1 NAME
+
+microndla - MicroDLNA DLNA/UPnP-AV Server
+
+=head1 SYNOPSIS
+
+B<microndla> [I<OPTIONS>] -D [B<MEDIA DIR>] -u [B<USERNAME>]
+
+=head1 DESCRIPTION
+
+B<microdlna> is a lightweight, stateless DLNA/UPnP-AV server for serving files to
+televisions and other media players. It's main use is for playing videos on
+players that don't support reading from network drives.
+
+=head1 OPTIONS
+
+=head2 General options
+
+=over
+
+=item B<-h>,  B<--help>
+
+Display this help
+
+=item B<-V>,  B<--version>
+
+Print the version number
+
+=item B<-f>,  B<--config-file> I<path>
+
+Read the specified config file. All command line options that take a value can
+be provided in the options file in the following format
+
+=over
+
+=item media_dir=/media/MountedHardDrive
+
+=item user=nobody
+
+=item log_file=/var/log/microdlna.log
+
+=item pid_file=/var/run/microdlna.pid
+
+=back
+
+=back
+
+=head2 Media settings
+
+=over
+
+=item B<-D>,  B<--media-dir> I<path>
+
+Media dir to publish, REQUIRED
+
+=back
+
+=head2 Running environment
+
+=over
+
+=item B<-u>,  B<--user> I<uid or username>
+
+User name or uid to use, defaults to the current user. 
+
+=item B<-L>,  B<--log-file> I<path>
+
+The path of the log file
+
+=item B<-l>,  B<--log-level> I<n>
+
+Log level can be: fatal, info, error, debug
+
+=item B<-P>,  B<--pid-file> I<path>
+
+Path to the pid file
+
+=item B<-d>,  B<--debug>
+
+Show all log messages and don't fork. Alias for --log-level debug --foreground
+
+=item B<-v>,  B<--verbose>
+
+Enable verbose messages. Alias for --log-level verbose
+
+=item B<-S>,  B<--mode-systemd>
+
+Systemd-compatible mode: stay in forground and omit timestamps from log messages
+
+=item B<-g>,  B<--foreground>
+
+Foreground execution
+
+=back
+
+=head2 Network config
+
+=over
+
+=item B<-p>,  B<--port> I<n>
+
+Port for HTTP traffic, defaults to 2800
+
+=item B<-i>,  B<--network-interface> I<comma-separated list>
+
+Interfaces to listen on, default: all
+
+=item B<-c>,  B<--max-connections> I<n>
+
+Maximal number of concurrent connections
+
+=back
+
+=head2 UPnP settings
+
+=over
+
+=item B<-t>,  B<--notify-interval> I<n>
+
+Notification broadcast interval
+
+=item B<-U>,  B<--uuid> I<string>
+
+UUID to use
+
+=item B<-F>,  B<--friendly-name> I<string>
+
+Friendly name, defaults to the computer's host name
+
+=back
+
+=head1 AUTHORS
+
+=over
+
+=item B<microdlna> was originally developed by B<Justin Maggard>
+
+=item L<https://sourceforge.net/projects/microdlna/>
+
+Z<>
+
+=item This fork is by B<Michael J. Walsh>
+
+=item L<https://github.com/mjfwalsh/microdlna>
+
+=back
