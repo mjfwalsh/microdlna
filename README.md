@@ -1,4 +1,4 @@
-==Microdlna==
+# Microdlna
 
 The is a fork of microdlna which is itself a fork a minidlna.
 
@@ -8,7 +8,7 @@ low memory usage.
 It has no database, search capabilities, sorting, thumbnails, or format conversion,
 but it can cope with the media directory not existing at start time.
 
-==Compile==
+## Compile
 
     ./configure.sh
     make
