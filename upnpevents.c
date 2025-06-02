@@ -201,7 +201,7 @@ static int remove_upnpevent_subscriber(const char *sid)
             }
 
             *container = sub->next;
-            printf("2 removing subscriber %s\n", sub->uuid);
+            PRINT_LOG(E_DEBUG, "removing subscriber %s\n", sub->uuid);
             free(sub);
             return 0;
         }
@@ -341,7 +341,7 @@ static void upnp_event_prepare(struct upnp_event_notify *obj)
     struct stream *fh = sdopen(nfd);
     if (!fh)
     {
-        printf("Failed to reopen filehandle");
+        PRINT_LOG(E_DEBUG, "Failed to reopen filehandle\n");
         return;
     }
 
