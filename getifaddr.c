@@ -114,9 +114,6 @@ static void getifaddr(const char *ifname, int sssdp, const struct ifaddrs *ifap)
         if (ifname || n_lan_addr >= MAX_LAN_ADDR)
             break;
     }
-
-    if (ifname && !p)
-        PRINT_LOG(E_ERROR, "Network interface %s not found\n", ifname);
 }
 
 static int getsyshwaddr(char *buf, int len)
@@ -249,34 +246,52 @@ void set_uuid_value(void)
 
 void reload_ifaces(int reload, int sssdp)
 {
-    n_lan_addr = 0;
-    struct ifaddrs *ifap;
-    if (getifaddrs(&ifap) != 0)
+    int wait = 15;
+    for (;;)
     {
-        PRINT_LOG(E_ERROR, "getifaddrs(): %d\n", errno);
-        return;
-    }
+        n_lan_addr = 0;
+        struct ifaddrs *ifap;
+        if (getifaddrs(&ifap) != 0)
+            EXIT_ERROR("getifaddrs(): %d\n", errno);
 
-    int i = 0;
-    do
-    {
-        getifaddr(ifaces[i], sssdp, ifap);
-        i++;
-    } while (i < MAX_LAN_ADDR && ifaces[i]);
+        int i = 0;
+        do
+        {
+            getifaddr(ifaces[i], sssdp, ifap);
+            i++;
+        } while (i < MAX_LAN_ADDR && ifaces[i]);
 
-    freeifaddrs(ifap);
+        freeifaddrs(ifap);
 
-    for (i = 0; i < n_lan_addr; i++)
-    {
-        PRINT_LOG(E_DEBUG, "Enabling interface %s/%s\n",
-                  lan_addr[i].str, inet_ntoa_ts(lan_addr[i].mask));
+        for (i = 0; i < n_lan_addr; i++)
+        {
+            PRINT_LOG(E_INFO, "Enabling interface %s/%s\n",
+                      lan_addr[i].str, inet_ntoa_ts(lan_addr[i].mask));
+
+            if (reload)
+                send_ssdp_goodbyes(lan_addr[i].snotify);
+
+            send_ssdp_notifies(lan_addr[i].snotify, lan_addr[i].str);
+        }
+
+        if (n_lan_addr > 0) return;
 
         if (reload)
-            send_ssdp_goodbyes(lan_addr[i].snotify);
+        {
+            PRINT_LOG(E_INFO, "Failed to find any network interfaces on reload\n");
+            return;
+        }
 
-        send_ssdp_notifies(lan_addr[i].snotify, lan_addr[i].str);
+        // retry ...
+        PRINT_LOG(E_INFO,
+                  "Failed to find any network interfaces (retrying in %d seconds)\n",
+                  wait);
+
+        sleep(wait);
+        if (wait < 60) wait *= 2;
     }
 }
+
 
 void send_all_ssdp_notifies(void)
 {
