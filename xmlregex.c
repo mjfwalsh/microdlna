@@ -42,6 +42,8 @@
 
 
 #define BUF_SIZE 1024
+#define ELE_NAME_SIZE 20
+#define ELE_VALUE_SIZE (BUF_SIZE + 1)
 
 enum ChunkMode
 {
@@ -148,8 +150,8 @@ void process_post_content(struct upnphttp *h)
 {
     int i;
     char c;
-    char ele_name[20];
-    char ele_value[BUF_SIZE];
+    char ele_name[ELE_NAME_SIZE + 1];
+    char ele_value[ELE_VALUE_SIZE];
 
     struct cursor xml;
 
@@ -179,12 +181,12 @@ void process_post_content(struct upnphttp *h)
 new_tag:
         // only accept letters as element names (ignore colons)
         i = 0;
-        while (i < 20 && ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')))
+        while (i < ELE_NAME_SIZE && ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')))
         {
             ele_name[i++] = c;
             c = read_char(&xml);
         }
-        if (i == 0 || i == 20 || !is_greater_than_sign_or_white_space(c))
+        if (i == 0 || i == ELE_NAME_SIZE || !is_greater_than_sign_or_white_space(c))
             continue;
 
         ele_name[i] = '\0';
@@ -200,21 +202,23 @@ new_tag:
         while (is_white_space(c))
             c = read_char(&xml);
 
-        // parse the value (zero-length is fine)
+        // parse the value (zero-length is fine), leave room for '\0'
         i = 0;
-        while (i < BUF_SIZE && c != '<' && c != '\0')
+        while (i < ELE_VALUE_SIZE - 1 && c != '<' && c != '\0')
         {
             ele_value[i++] = c;
             c = read_char(&xml);
         }
-        if (i == BUF_SIZE || c == '\0')
+        ele_value[i] = '\0';
+        if (i == ELE_VALUE_SIZE - 1 || c == '\0')
             break;
 
-        // set terminating null and right trim
+        // right trim
         do
         {
-            ele_value[i] = '\0';
+            ;
         } while (i > 0 && is_white_space(ele_value[--i]));
+        ele_value[i + 1] = '\0';
 
         // validate the closing xml tag
         c = read_char(&xml);

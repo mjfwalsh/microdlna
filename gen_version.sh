@@ -1,6 +1,6 @@
 #!/bin/sh
 
-date=$(date -uR)
+date=$(date -R)
 hash=UNKNOWN
 branch=UNKNOWN
 repo=UNKNOWN

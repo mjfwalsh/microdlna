@@ -57,7 +57,7 @@
 struct stream;
 
 /* server: HTTP header returned in all HTTP responses : */
-#define MICRODLNA_VERSION "0.2"
+#define MICRODLNA_VERSION "1.0"
 #define MICRODLNA_SERVER_STRING "MicroDLNA/" MICRODLNA_VERSION
 
 enum HttpCommands

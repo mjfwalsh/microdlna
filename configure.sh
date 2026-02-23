@@ -6,7 +6,25 @@ objs=$(ls -1 *.c | grep -v version | sed -e 's|\.c$|.o|' | tr '\n' ' ')
 exec 1> Makefile
 
 cat <<MAKEFILE
-CFLAGS := --std=c11 -D_GNU_SOURCE -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64 -g -O2
+# Build type: dev (default) | release
+#   make release  -> -O3, LTO, -ffunction-sections -fdata-sections, --gc-sections, sans -g
+#   make           -> -O2, -g (débogage)
+BUILD ?= dev
+
+BASE_CFLAGS := --std=c11 -D_GNU_SOURCE -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64
+CFLAGS_DEV := \$(BASE_CFLAGS) -g -O2
+CFLAGS_RELEASE := \$(BASE_CFLAGS) -O3 -flto -ffunction-sections -fdata-sections
+LDFLAGS_DEV := -pthread
+LDFLAGS_RELEASE := -pthread -flto -Wl,--gc-sections
+
+ifeq (\$(BUILD),release)
+  CFLAGS := \$(CFLAGS_RELEASE)
+  LDFLAGS := \$(LDFLAGS_RELEASE)
+else
+  CFLAGS := \$(CFLAGS_DEV)
+  LDFLAGS := \$(LDFLAGS_DEV)
+endif
+
 DST := $objs version.c
 
 .PHONY: all
@@ -25,7 +43,7 @@ ${tab}\$(CC) -c \$(CFLAGS) \$< -o \$@
 
 microdlnad: \$(DST)
 ${tab}./gen_version.sh > version_info.h
-${tab}\$(CC) \$(CFLAGS) -o microdlnad \$(DST) -pthread
+${tab}\$(CC) \$(CFLAGS) -o microdlnad \$(DST) \$(LDFLAGS)
 
 microdlnad.8: microdlna.pod
 ${tab}pod2man -c multimedia -r '' microdlna.pod > microdlnad.8

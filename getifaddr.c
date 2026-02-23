@@ -77,6 +77,7 @@ static int n_lan_addr = 0;
 #define MAX_LAN_ADDR 4
 
 static char *ifaces[MAX_LAN_ADDR] = { NULL, NULL, NULL, NULL };
+static char *ifaces_alloc = NULL;   /* single block for all interface names */
 
 static struct lan_addr_s lan_addr[MAX_LAN_ADDR];
 
@@ -331,38 +332,53 @@ const char *get_interface_ip_str(int iface)
 
 void free_ifaces(void)
 {
-    free(ifaces[0]);
+    free(ifaces_alloc);
+    ifaces_alloc = NULL;
     for (int i = 0; i < MAX_LAN_ADDR; i++)
         ifaces[i] = NULL;
+}
+
+static void trim_token(char **token)
+{
+    char *t = *token;
+    while (isspace((unsigned char)*t))
+        t++;
+    *token = t;
+    while (*t)
+        t++;
+    while (t > *token && isspace((unsigned char)t[-1]))
+        t--;
+    *t = '\0';
 }
 
 void set_interfaces_from_string(const char *input)
 {
     free_ifaces();
 
-    while (isspace(*input))
+    while (isspace((unsigned char)*input))
         input++;
 
-    char *p = safe_strdup(input);
-    ifaces[0] = p;
+    ifaces_alloc = safe_strdup(input);
+    char *p = ifaces_alloc;
+    int num_ifaces = 0;
 
-    int num_ifaces = 1;
-    for (;;)
+    while (p != NULL)
     {
-        strsep(&p, ",");
-        if (p == NULL || *p == '\0')
+        char *token = strsep(&p, ",");
+        if (token == NULL)
             break;
 
-        while (isspace(*p))
-            p++;
+        trim_token(&token);
+        if (*token == '\0')
+            continue;
 
         if (num_ifaces >= MAX_LAN_ADDR)
         {
             PRINT_LOG(E_ERROR, "Too many interfaces (max: %d), ignoring %s\n",
-                      MAX_LAN_ADDR, p);
+                      MAX_LAN_ADDR, token);
             break;
         }
 
-        ifaces[num_ifaces++] = p;
+        ifaces[num_ifaces++] = token;
     }
 }

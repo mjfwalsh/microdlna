@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU General Public License
  * along with MicroDLNA. If not, see <http://www.gnu.org/licenses/>.
  */
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -55,12 +56,13 @@ static int needs_escaping(char c)
 
 const char *url_escape(const char *input_string)
 {
-    int normal = 0;
-    int to_escape = 0;
+    size_t normal = 0;
+    size_t to_escape = 0;
+    size_t escaped_size;
 
-    for (int i = 0; input_string[i]; i++)
+    for (const char *s = input_string; *s; s++)
     {
-        if (needs_escaping(input_string[i]))
+        if (needs_escaping(*s))
             to_escape++;
         else
             normal++;
@@ -69,10 +71,15 @@ const char *url_escape(const char *input_string)
     if (to_escape == 0)
         return input_string;
 
-    char *escaped_string = safe_malloc(normal + 3 * to_escape + 1);
+    /* escaped_size = normal + 3*to_escape + 1; avoid overflow */
+    if (normal > SIZE_MAX - 1 || to_escape > (SIZE_MAX - 1 - normal) / 3)
+        EXIT_ERROR("url_escape: result would overflow\n");
 
-    char *p;
-    for (p = escaped_string; *input_string; input_string++)
+    escaped_size = normal + 3 * to_escape + 1;
+    char *escaped_string = safe_malloc(escaped_size);
+
+    char *p = escaped_string;
+    for (; *input_string; input_string++)
     {
         if (needs_escaping(*input_string))
             p += sprintf(p, "%%%02X", (unsigned char)*input_string);

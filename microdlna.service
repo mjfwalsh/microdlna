@@ -1,0 +1,30 @@
+[Unit]
+Description=MicroDLNA DLNA/UPnP-AV media server
+Documentation=man:microdlnad(8)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/microdlnad --mode-systemd -f /usr/local/etc/microdlna.conf
+Restart=on-failure
+RestartSec=5
+
+# Optional: run as unprivileged user (set in config file or here)
+User=pi
+Group=pi
+
+# Security hardening (adjust if media_dir is under /home or elsewhere)
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/pi
+ReadOnlyPaths=/
+
+# Allow binding to privileged ports if needed (remove if port >= 1024)
+# AmbientCapabilities=CAP_NET_BIND_SERVICE
+# CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target

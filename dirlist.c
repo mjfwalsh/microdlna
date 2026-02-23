@@ -28,6 +28,7 @@
  */
 
 #include <dirent.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/stat.h>
@@ -144,6 +145,13 @@ content_entry **get_directory_listing(struct upnphttp *h, unsigned int *file_cou
     }
     closedir(dir);
 
+    if (*file_count == 0)
+    {
+        safe_realloc((void **)&entries, sizeof(content_entry *));
+        h->requested_count = 0;
+        return entries;
+    }
+
     safe_realloc((void **)&entries, *file_count * sizeof(content_entry *));
 
     qsort(entries, *file_count, sizeof(content_entry *), content_entry_compare);
@@ -154,15 +162,19 @@ content_entry **get_directory_listing(struct upnphttp *h, unsigned int *file_cou
         h->requested_count = 0;
     }
 
-    if (h->requested_count == -1 || h->starting_index + h->requested_count > *file_count)
-        h->requested_count = *file_count - h->starting_index;
+    if (h->requested_count == -1 || (unsigned)h->requested_count > *file_count
+        || h->starting_index + (unsigned)h->requested_count > *file_count)
+    {
+        unsigned int avail = *file_count - h->starting_index;
+        h->requested_count = avail > (unsigned)INT_MAX ? INT_MAX : (int)avail;
+    }
 
     // free any entries before the h->starting_index
     for (unsigned int i = 0; i < h->starting_index; i++)
         free(entries[i]);
 
     // free any entries after the end of the requested count
-    for (unsigned int i = h->starting_index + h->requested_count; i < *file_count; i++)
+    for (unsigned int i = h->starting_index + (unsigned)h->requested_count; i < *file_count; i++)
         free(entries[i]);
 
     // shift used entries to the left
@@ -170,7 +182,7 @@ content_entry **get_directory_listing(struct upnphttp *h, unsigned int *file_cou
         for (int i = 0; i < h->requested_count; i++)
             entries[i] = entries[i + h->starting_index];
 
-    safe_realloc((void **)&entries, h->requested_count * sizeof(content_entry *));
+    safe_realloc((void **)&entries, (unsigned)h->requested_count * sizeof(content_entry *));
 
     return entries;
 }

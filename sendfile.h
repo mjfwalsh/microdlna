@@ -21,4 +21,4 @@
  * along with MicroDLNA. If not, see <http://www.gnu.org/licenses/>.
  */
 
-void send_file(int socketfd, int sendfd, off_t offset, size_t end_offset);
+void send_file(int socketfd, int sendfd, off_t offset, off_t end_offset);

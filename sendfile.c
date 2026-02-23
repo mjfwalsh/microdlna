@@ -29,7 +29,10 @@
 #include "utils.h"
 #include "log.h"
 
+/* Max bytes per sendfile() call (2^31-1): keeps count in 32-bit range, avoids huge
+ * single kernel transfers. Only used when HAVE_SYS_SENDFILE. */
 #define MAX_BUFFER_SIZE 2147483647
+/* Fallback read/write buffer size (64 KiB): one allocation, decent throughput. */
 #define MIN_BUFFER_SIZE 65536
 
 #if defined(__linux__)
@@ -79,15 +82,20 @@ static inline int sys_sendfile(int sock, int sendfd, off_t *offset, off_t len)
 
 
 
-void send_file(int socketfd, int sendfd, off_t offset, size_t end_offset)
+/* Skip sendfile for transfers larger than 2GB; use read/write to avoid
+ * kernel/fs issues (e.g. sendfile returning 0 or -1 with large count). */
+#define SENDFILE_MAX_TRANSFER ((off_t)2147483647)
+
+void send_file(int socketfd, int sendfd, off_t offset, off_t end_offset)
 {
-    size_t send_size;
+    off_t send_size;
     off_t ret;
 
 #if defined(HAVE_SYS_SENDFILE)
     static int try_sendfile = 1;
+    off_t total = end_offset - offset + 1;
 
-    if (try_sendfile)
+    if (try_sendfile && total <= SENDFILE_MAX_TRANSFER)
     {
         while (offset <= end_offset)
         {
@@ -95,21 +103,24 @@ void send_file(int socketfd, int sendfd, off_t offset, size_t end_offset)
             if (send_size > MAX_BUFFER_SIZE)
                 send_size = MAX_BUFFER_SIZE;
 
-            PRINT_LOG(E_DEBUG, "sendfile range %jd to %zu\n", (intmax_t)offset,
-                      send_size);
-            ret = sys_sendfile(socketfd, sendfd, &offset, send_size);
+            PRINT_LOG(E_DEBUG, "sendfile range %jd to %jd\n", (intmax_t)offset,
+                      (intmax_t)send_size);
+            ret = sys_sendfile(socketfd, sendfd, &offset, (size_t)send_size);
             if (ret == -1)
             {
-                // a broken pipe isn't really an error
+                /* Client closed connection */
                 if (errno == EPIPE)
                     break;
 
                 PRINT_LOG(E_DEBUG, "sendfile error :: error no. %d\n", errno);
-                /* If sendfile isn't supported on the filesystem, don't bother trying to use it again. */
-                if (errno == EOVERFLOW || errno == EINVAL)
-                    goto fallback;
-                else if (errno != EAGAIN)
-                    break;
+                /* Fall back to read/write on any sendfile error. */
+                goto fallback;
+            }
+            if (ret == 0)
+            {
+                /* No progress (e.g. socket buffer full or kernel quirk). Avoid infinite loop. */
+                PRINT_LOG(E_DEBUG, "sendfile returned 0, falling back to read/write\n");
+                goto fallback;
             }
         }
         return;
@@ -126,11 +137,11 @@ fallback:
     while (offset <= end_offset)
     {
         send_size = end_offset - offset + 1;
-        if (send_size > MIN_BUFFER_SIZE)
+        if (send_size > (off_t)MIN_BUFFER_SIZE)
             send_size = MIN_BUFFER_SIZE;
 
         lseek(sendfd, offset, SEEK_SET);
-        ret = read(sendfd, buf, send_size);
+        ret = read(sendfd, buf, (size_t)send_size);
         if (ret == -1)
         {
             PRINT_LOG(E_DEBUG, "read error :: error no. %d\n", errno);
