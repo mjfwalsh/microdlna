@@ -45,4 +45,12 @@ typedef struct
     char name[];
 } content_entry;
 
-content_entry **get_directory_listing(struct upnphttp *h, unsigned int *file_count);
+typedef struct
+{
+    content_entry **entries;
+    int length;
+} directory_listing;
+
+void free_directory_listing(directory_listing *dl);
+
+int get_directory_listing(struct upnphttp *h, directory_listing *dl);

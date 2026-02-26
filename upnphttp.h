@@ -82,6 +82,7 @@ enum HttpResponseCode
     HTTP_INTERNAL_ERROR_500,
     HTTP_NOT_IMPLEMENTED_501,
     HTTP_SERVICE_UNAVAILABLE_503,
+    HTTP_INSUFFICIENT_STORAGE_507,
 };
 
 struct upnphttp
@@ -99,7 +100,7 @@ struct upnphttp
     /* soap action */
     void (*req_soap_action)(struct upnphttp *);
     char *remote_dirpath;
-    unsigned int starting_index;
+    int starting_index;
     int requested_count;
 
     /* For SUBSCRIBE */

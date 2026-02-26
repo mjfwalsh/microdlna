@@ -324,9 +324,7 @@ void get_search_capabilities(struct upnphttp *h)
     chunk_print_end(h->st);
 }
 
-static void print_xml_directory_listing(struct upnphttp *h,
-                                        content_entry **entries, int number_returned,
-                                        int total_matches)
+static void print_xml_directory_listing(struct upnphttp *h, directory_listing *dl)
 {
     send_http_headers(h, 200, "OK");
 
@@ -347,11 +345,11 @@ static void print_xml_directory_listing(struct upnphttp *h,
 
     PRINT_LOG(E_DEBUG, "Browsing ContentDirectory: %s\n", h->remote_dirpath);
 
-    for (int i = 0; i < number_returned; i++)
+    for (int i = h->starting_index; i < h->starting_index + h->requested_count; i++)
     {
-        const char *xml_escaped_filename = xml_escape_double(entries[i]->name);
+        const char *xml_escaped_filename = xml_escape_double(dl->entries[i]->name);
 
-        if (entries[i]->type == T_DIR)
+        if (dl->entries[i]->type == T_DIR)
         {
             CHUNK_PRINT_ALL(h->st,
                             "&lt;container id=\"",
@@ -368,9 +366,9 @@ static void print_xml_directory_listing(struct upnphttp *h,
                             "&gt; -1 &lt;/upnp:storageUsed&gt;"
                             "&lt;/container&gt;");
         }
-        else if (entries[i]->type == T_FILE)
+        else if (dl->entries[i]->type == T_FILE)
         {
-            const char *url_escaped_filename = url_escape(entries[i]->name);
+            const char *url_escaped_filename = url_escape(dl->entries[i]->name);
 
             CHUNK_PRINT_ALL(h->st,
                             "&lt;item id=\"",
@@ -382,16 +380,16 @@ static void print_xml_directory_listing(struct upnphttp *h,
                             "\" restricted=\"1\"&gt;&lt;dc:title&gt;",
                             xml_escaped_filename,
                             "&lt;/dc:title&gt;&lt;upnp:class&gt;object.item.",
-                            mime_type_to_text(entries[i]->mime->type),
+                            mime_type_to_text(dl->entries[i]->mime->type),
                             "Item&lt;/upnp:class&gt;");
 
-            chunk_printf(h->st, "&lt;res size=\"%" PRIu64 "\" ", entries[i]->size);
+            chunk_printf(h->st, "&lt;res size=\"%" PRIu64 "\" ", dl->entries[i]->size);
 
             CHUNK_PRINT_ALL(h->st,
                             "protocolInfo=\"http-get:*:",
-                            mime_type_to_text(entries[i]->mime->type),
+                            mime_type_to_text(dl->entries[i]->mime->type),
                             "/",
-                            entries[i]->mime->sub_type,
+                            dl->entries[i]->mime->sub_type,
                             ":DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS="
                             "01700000000000000000000000000000\"&gt;http://",
                             get_interface_ip_str(h->iface),
@@ -400,10 +398,10 @@ static void print_xml_directory_listing(struct upnphttp *h,
                             url_escaped_dirpath,
                             "/", url_escaped_filename, "&lt;/res&gt;&lt;/item&gt;");
 
-            if (url_escaped_filename != entries[i]->name)
+            if (url_escaped_filename != dl->entries[i]->name)
                 free((void *)url_escaped_filename);
         }
-        if (xml_escaped_filename != entries[i]->name)
+        if (xml_escaped_filename != dl->entries[i]->name)
             free((void *)xml_escaped_filename);
     }
 
@@ -413,10 +411,10 @@ static void print_xml_directory_listing(struct upnphttp *h,
         free((void *)xml_escaped_dirpath);
 
     chunk_printf(h->st, "&lt;/DIDL-Lite&gt;</Result>\n"
-                 "<NumberReturned>%u</NumberReturned>\n"
-                 "<TotalMatches>%u</TotalMatches>\n"
+                 "<NumberReturned>%d</NumberReturned>\n"
+                 "<TotalMatches>%d</TotalMatches>\n"
                  "<UpdateID>0</UpdateID>"
-                 "</u:BrowseResponse>", number_returned, total_matches);
+                 "</u:BrowseResponse>", h->requested_count, dl->length);
 
     chunk_print(h->st, afterbody);
 
@@ -425,9 +423,6 @@ static void print_xml_directory_listing(struct upnphttp *h,
 
 void browse_content_directory(struct upnphttp *h)
 {
-    if (h->requested_count < 1)
-        h->requested_count = -1;
-
     if (!h->remote_dirpath)
     {
         soap_error(h, 402, "Invalid Args - RemoteDirpath");
@@ -445,18 +440,13 @@ void browse_content_directory(struct upnphttp *h)
     xml_unescape(h->remote_dirpath);
 
     // get the directory listing
-    unsigned int total_file_count;
+    directory_listing dl = { .entries = NULL, .length = 0 };
+    if (!get_directory_listing(h, &dl)) return;
 
-    content_entry **entries = get_directory_listing(h, &total_file_count);
+    print_xml_directory_listing(h, &dl);
 
-    if (!entries)
-        return;
-
-    print_xml_directory_listing(h, entries, h->requested_count, total_file_count);
-
-    for (int i = 0; i < h->requested_count; i++)
-        free(entries[i]);
-    free(entries);
+    // free memory
+    free_directory_listing(&dl);
 }
 
 void unsupported_soap_action(struct upnphttp *h)

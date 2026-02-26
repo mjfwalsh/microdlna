@@ -340,6 +340,10 @@ void send_http_response(struct upnphttp *h, enum HttpResponseCode code)
 
     case HTTP_SERVICE_UNAVAILABLE_503:
         return send_http_response_helper(h, 503, "Http Service Unavailable");
+
+    case HTTP_INSUFFICIENT_STORAGE_507:
+        return send_http_response_helper(h, 507, "Insufficient Storage");
+
     }
 }
 

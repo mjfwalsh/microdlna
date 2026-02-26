@@ -28,7 +28,6 @@
  */
 
 #include <dirent.h>
-#include <limits.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/stat.h>
@@ -43,6 +42,9 @@
 #include "mime.h"
 #include "mediadir.h"
 
+// deline to serve or sort this many files
+#define MAX_FILE_LIMIT 10240
+
 static int content_entry_compare(const void *aa, const void *bb)
 {
     const content_entry *a = *((const content_entry *const *)aa);
@@ -55,8 +57,24 @@ static int content_entry_compare(const void *aa, const void *bb)
 }
 
 
-content_entry **get_directory_listing(struct upnphttp *h, unsigned int *file_count)
+void free_directory_listing(directory_listing *dl)
 {
+    for (int i = 0; i < dl->length; i++)
+        free(dl->entries[i]);
+    free(dl->entries);
+
+    dl->length = 0;
+    dl->entries = NULL;
+}
+
+int get_directory_listing(struct upnphttp *h, directory_listing *dl)
+{
+    if (h->requested_count < 1 || h->requested_count > MAX_FILE_LIMIT)
+        h->requested_count = -1;
+
+    if (h->starting_index < 0 || h->starting_index > MAX_FILE_LIMIT)
+        h->starting_index = 0;
+
     // check for funny file paths
     if (!sanitise_path(h->remote_dirpath))
     {
@@ -64,7 +82,7 @@ content_entry **get_directory_listing(struct upnphttp *h, unsigned int *file_cou
                   "Browsing ContentDirectory failed: addressing out of media dir: ObjectID='%s'\n",
                   h->remote_dirpath);
         send_http_response(h, HTTP_FORBIDDEN_403);
-        return NULL;
+        return 0;
     }
 
     PRINT_LOG(E_DEBUG, "Browsing ContentDirectory:\n"
@@ -81,14 +99,12 @@ content_entry **get_directory_listing(struct upnphttp *h, unsigned int *file_cou
         PRINT_LOG(E_INFO, "Browsing ContentDirectory failed: %s/%s\n", media_dir,
                   h->remote_dirpath);
         send_http_response(h, HTTP_SERVICE_UNAVAILABLE_503);
-        return NULL;
+        return 0;
     }
 
-    *file_count = 0;
-    content_entry **entries;
-
-    unsigned int allocated_entries = 256;
-    entries = (content_entry **)safe_malloc(allocated_entries * sizeof(content_entry *));
+    int allocated_entries = 256;
+    dl->entries = (content_entry **)safe_malloc(allocated_entries * sizeof(content_entry *));
+    dl->length = 0;
 
     struct dirent *de;
     int fd = dirfd(dir);
@@ -128,61 +144,62 @@ content_entry **get_directory_listing(struct upnphttp *h, unsigned int *file_cou
 
         // allocate file entry
         size_t name_size = strlen(de->d_name) + 1;
-        entries[*file_count] =
-            (content_entry *)safe_malloc(sizeof(content_entry) + name_size);
-        entries[*file_count]->type = type;
-        entries[*file_count]->size = st.st_size;
-        entries[*file_count]->mime = mime;
-        strxcpy(entries[*file_count]->name, de->d_name, name_size);
+        dl->entries[dl->length] =
+            (content_entry *)malloc(sizeof(content_entry) + name_size);
+        if (!dl->entries[dl->length])
+        {
+            free_directory_listing(dl);
+            closedir(dir);
+            send_http_response(h, HTTP_INSUFFICIENT_STORAGE_507);
+            return 0;
+        }
+
+        dl->entries[dl->length]->type = type;
+        dl->entries[dl->length]->size = st.st_size;
+        dl->entries[dl->length]->mime = mime;
+        strxcpy(dl->entries[dl->length]->name, de->d_name, name_size);
 
         // entry is valid, so allocate a new one and step the counter
-        (*file_count)++;
-        if (*file_count >= allocated_entries)
+        dl->length++;
+        if (dl->length >= allocated_entries)
         {
             allocated_entries += 128;
-            safe_realloc((void **)&entries, allocated_entries * sizeof(content_entry *));
+
+            content_entry **p;
+            if(allocated_entries < MAX_FILE_LIMIT
+                && (p = realloc(dl->entries, allocated_entries * sizeof(content_entry *))))
+            {
+                dl->entries = p;
+            }
+            else
+            {
+                free_directory_listing(dl);
+                closedir(dir);
+                send_http_response(h, HTTP_INSUFFICIENT_STORAGE_507);
+                return 0;
+            }
         }
     }
     closedir(dir);
 
-    if (*file_count == 0)
+    if (dl->length == 0)
     {
-        safe_realloc((void **)&entries, sizeof(content_entry *));
+        free_directory_listing(dl);
         h->requested_count = 0;
-        return entries;
+        return 1;
     }
 
-    safe_realloc((void **)&entries, *file_count * sizeof(content_entry *));
+    safe_realloc((void **)&dl->entries, dl->length * sizeof(content_entry *));
 
-    qsort(entries, *file_count, sizeof(content_entry *), content_entry_compare);
+    qsort(dl->entries, dl->length, sizeof(content_entry *), content_entry_compare);
 
-    if (h->starting_index >= *file_count)
+    if (h->requested_count == -1
+        || h->starting_index + h->requested_count > dl->length)
     {
-        h->starting_index = 0;
-        h->requested_count = 0;
+        h->requested_count = dl->length - h->starting_index;
+        if (h->requested_count < 0)
+            h->requested_count = 0;
     }
 
-    if (h->requested_count == -1 || (unsigned)h->requested_count > *file_count
-        || h->starting_index + (unsigned)h->requested_count > *file_count)
-    {
-        unsigned int avail = *file_count - h->starting_index;
-        h->requested_count = avail > (unsigned)INT_MAX ? INT_MAX : (int)avail;
-    }
-
-    // free any entries before the h->starting_index
-    for (unsigned int i = 0; i < h->starting_index; i++)
-        free(entries[i]);
-
-    // free any entries after the end of the requested count
-    for (unsigned int i = h->starting_index + (unsigned)h->requested_count; i < *file_count; i++)
-        free(entries[i]);
-
-    // shift used entries to the left
-    if (h->starting_index > 0)
-        for (int i = 0; i < h->requested_count; i++)
-            entries[i] = entries[i + h->starting_index];
-
-    safe_realloc((void **)&entries, (unsigned)h->requested_count * sizeof(content_entry *));
-
-    return entries;
+    return 1;
 }
