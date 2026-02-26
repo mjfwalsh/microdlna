@@ -102,7 +102,6 @@ static struct upnphttp *init_upnphttp_struct(int s, int iface)
 
     memset(ret, 0, sizeof(struct upnphttp));
 
-    ret->fd = s;
     ret->iface = iface;
     ret->requested_count = -1;
     ret->st = sdopen(s);
@@ -121,7 +120,7 @@ static void delete_upnphttp_struct(struct upnphttp *h)
         return;
 
     if (h->st && sdclose(h->st) < 0)
-        PRINT_LOG(E_ERROR, "delete_upnphttp_struct: fclose(%d): %d\n", h->fd, errno);
+        PRINT_LOG(E_ERROR, "delete_upnphttp_struct: fclose(%d): %d\n", stream_fileno(h->st), errno);
 
     free(h->remote_dirpath);
     free(h->req_callback);
@@ -359,18 +358,18 @@ static void send_xml_desc(struct upnphttp *h, void(func) (struct stream *))
     }
 }
 
-static int readline(int fd, char *buf, int limit)
+static int readline(struct stream *st, char *buf, int limit)
 {
     int len = 0;
 
-    while (len < limit && read(fd, buf, 1) > 0)
+    while (len < limit && stream_read(buf, 1, st) > 0)
     {
         if (*buf == '\r')
         {
             *buf = '\0';
 
             char next;
-            if (read(fd, &next, 1) > 0 && next == '\n')
+            if (stream_read(&next, 1, st) > 0 && next == '\n')
                 return len;
             else
                 return -1;
@@ -394,12 +393,12 @@ int process_upnphttp_http_query(int s, int iface)
 
     // set a 20 second timeout for activity on incoming connections
     struct timeval to = { .tv_sec = 20, .tv_usec = 0 };
-    if (setsockopt(h->fd, SOL_SOCKET, SO_RCVTIMEO, &to, sizeof(struct timeval)))
+    if (setsockopt(stream_fileno(h->st), SOL_SOCKET, SO_RCVTIMEO, &to, sizeof(struct timeval)))
         PRINT_LOG(E_ERROR, "setsockopt(http, SO_RCVTIMEO): %d\n", errno);
 
     // get the first line from the buf
     char buf[1024];
-    int len = readline(h->fd, &buf[0], 1024);
+    int len = readline(h->st, &buf[0], 1024);
     if (len < 1)
     {
         PRINT_LOG(E_DEBUG, "Received bad http request\n");
@@ -461,7 +460,7 @@ int process_upnphttp_http_query(int s, int iface)
 
     // check headers
     int header_no = 0;
-    while (header_no < 20 && (len = readline(h->fd, &buf[0], 1024)) > 0)
+    while (header_no < 20 && (len = readline(h->st, &buf[0], 1024)) > 0)
     {
         int i = 0;
         int l = len;
@@ -885,23 +884,20 @@ static void *serve_file(void *param)
 
     if (h->req_command != EHead)
     {
-        stream_flush(h->st);
-
         // get what we need to run the file transfer
-        FILE *fh = h->st->fh;
-        int fd = h->fd;
+        int fd = dup(stream_fileno(h->st));
+        if (fd == -1) goto error;
+
         off_t start = h->req_range_start;
         off_t end = h->req_range_end;
 
-        // deallocate everything else, taking care not to close the file handle
-        free(h->st);
-        h->st = NULL;
+        // deallocate
         delete_upnphttp_struct(h);
         h = NULL;
 
         // run the file transfer
         send_file(fd, sendfh, start, end);
-        fclose(fh);
+        close(fd);
     }
 
 error:

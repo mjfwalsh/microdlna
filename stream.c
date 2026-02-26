@@ -35,9 +35,16 @@
 #include "stream.h"
 #include "utils.h"
 
+struct stream
+{
+    FILE *fh;
+    char buf[BUFFER_SIZE];
+    int pos;
+};
+
 struct stream *sdopen(int sd)
 {
-    FILE *fh = fdopen(sd, "w");
+    FILE *fh = fdopen(sd, "r+");
 
     if (!fh)
         return NULL;
@@ -122,9 +129,19 @@ int chunk_print_end(struct stream *s)
 
 // standard io funcs
 
+size_t stream_read(void *ptr, size_t nitems, struct stream *s)
+{
+    return fread(ptr, 1, nitems, s->fh);
+}
+
 size_t stream_write(const void *restrict ptr, size_t nitems, struct stream *s)
 {
     return fwrite(ptr, 1, nitems, s->fh);
+}
+
+int stream_fileno(struct stream *s)
+{
+    return fileno(s->fh);
 }
 
 int stream_printf(struct stream *s, const char *fmt, ...)
@@ -138,12 +155,6 @@ int stream_printf(struct stream *s, const char *fmt, ...)
     va_end(va);
 
     return bytes_written;
-}
-
-void stream_flush(struct stream *s)
-{
-    stream_clear(s);
-    fflush(s->fh);
 }
 
 int sdclose(struct stream *s)

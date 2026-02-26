@@ -34,6 +34,7 @@
 #include "xmlregex.h"
 #include "upnphttp.h"
 #include "utils.h"
+#include "stream.h"
 
 // Instead of parsing the xml we search it for name value pairs using
 // the following regex:
@@ -54,7 +55,7 @@ enum ChunkMode
 
 struct cursor
 {
-    int fd;
+    struct stream *st;
     int bytes_left;
     int chunked;
 };
@@ -82,7 +83,7 @@ static char read_char(struct cursor *xml)
             return '\0';
 
         case MIDDLE_CHUNK:
-            if (read(xml->fd, &buf[0], 2) != 2)
+            if (stream_read(&buf[0], 2, xml->st) != 2)
                 return '\0';
 
             if (buf[0] != '\r' || buf[1] != '\n')
@@ -99,7 +100,7 @@ static char read_char(struct cursor *xml)
         int i = 0;
         while (i < 4)
         {
-            if (read(xml->fd, &buf[i], 1) != 1)
+            if (stream_read(&buf[i], 1, xml->st) != 1)
                 return '\0';
             if (buf[i] == '\r')
                 break;
@@ -113,7 +114,7 @@ static char read_char(struct cursor *xml)
         if (endptr == &buf[0] || *endptr != '\r')
             return '\0';
 
-        if (read(xml->fd, &buf[0], 1) != 1 || buf[0] != '\n' || chunklen < 1
+        if (stream_read(&buf[0], 1, xml->st) != 1 || buf[0] != '\n' || chunklen < 1
             || chunklen > 2048)
             return '\0';
 
@@ -121,7 +122,7 @@ static char read_char(struct cursor *xml)
     }
 
     xml->bytes_left--;
-    if (read(xml->fd, &buf[0], 1) == 1)
+    if (stream_read(&buf[0], 1, xml->st) == 1)
         return buf[0];
     else
         return '\0';
@@ -155,7 +156,7 @@ void process_post_content(struct upnphttp *h)
 
     struct cursor xml;
 
-    xml.fd = h->fd;
+    xml.st = h->st;
     if (h->reqflags & FLAG_CHUNKED)
     {
         xml.chunked = FIRST_CHUNK;

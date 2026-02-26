@@ -88,7 +88,6 @@ enum HttpResponseCode
 struct upnphttp
 {
     struct stream *st;
-    int fd;
     int iface;
 
     /* request */

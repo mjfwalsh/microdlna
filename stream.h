@@ -32,12 +32,7 @@
 
 #include <stdio.h>
 
-struct stream
-{
-    FILE *fh;
-    char buf[BUFFER_SIZE];
-    int pos;
-};
+struct stream;
 
 struct stream *sdopen(int sd);
 
@@ -46,9 +41,11 @@ int sdclose(struct stream *s);
 int stream_printf(struct stream *f, const char *fmt, ...)
 __attribute__((__format__(__printf__, 2, 3)));
 
+size_t stream_read(void *ptr, size_t nitems, struct stream *s);
+
 size_t stream_write(const void *restrict ptr, size_t nitems, struct stream *st);
 
-void stream_flush(struct stream *s);
+int stream_fileno(struct stream *s);
 
 /* send http chunks */
 void chunk_printf(struct stream *f, const char *fmt, ...)
