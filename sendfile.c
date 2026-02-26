@@ -31,9 +31,9 @@
 
 /* Max bytes per sendfile() call (2^31-1): keeps count in 32-bit range, avoids huge
  * single kernel transfers. Only used when HAVE_SYS_SENDFILE. */
-#define MAX_BUFFER_SIZE 2147483647
+#define SENDFILE_MAX_TRANSFER 2147483647
 /* Fallback read/write buffer size (64 KiB): one allocation, decent throughput. */
-#define MIN_BUFFER_SIZE 65536
+#define BUFFER_SIZE 65536
 
 #if defined(__linux__)
 
@@ -82,10 +82,6 @@ static inline int sys_sendfile(int sock, int sendfd, off_t *offset, off_t len)
 
 
 
-/* Skip sendfile for transfers larger than 2GB; use read/write to avoid
- * kernel/fs issues (e.g. sendfile returning 0 or -1 with large count). */
-#define SENDFILE_MAX_TRANSFER ((off_t)2147483647)
-
 void send_file(int socketfd, int sendfd, off_t offset, off_t end_offset)
 {
     off_t send_size;
@@ -93,15 +89,14 @@ void send_file(int socketfd, int sendfd, off_t offset, off_t end_offset)
 
 #if defined(HAVE_SYS_SENDFILE)
     static int try_sendfile = 1;
-    off_t total = end_offset - offset + 1;
 
-    if (try_sendfile && total <= SENDFILE_MAX_TRANSFER)
+    if (try_sendfile)
     {
         while (offset <= end_offset)
         {
             send_size = end_offset - offset + 1;
-            if (send_size > MAX_BUFFER_SIZE)
-                send_size = MAX_BUFFER_SIZE;
+            if (send_size > SENDFILE_MAX_TRANSFER)
+                send_size = SENDFILE_MAX_TRANSFER;
 
             PRINT_LOG(E_DEBUG, "sendfile range %jd to %jd\n", (intmax_t)offset,
                       (intmax_t)send_size);
@@ -132,13 +127,13 @@ fallback:
 
     /* Fall back to regular I/O */
     PRINT_LOG(E_DEBUG, "Falling back on regular I/O: error no. %d\n", errno);
-    char *buf = safe_malloc(MIN_BUFFER_SIZE);
+    char *buf = safe_malloc(BUFFER_SIZE);
 
     while (offset <= end_offset)
     {
         send_size = end_offset - offset + 1;
-        if (send_size > (off_t)MIN_BUFFER_SIZE)
-            send_size = MIN_BUFFER_SIZE;
+        if (send_size > (off_t)BUFFER_SIZE)
+            send_size = BUFFER_SIZE;
 
         lseek(sendfd, offset, SEEK_SET);
         ret = read(sendfd, buf, (size_t)send_size);
