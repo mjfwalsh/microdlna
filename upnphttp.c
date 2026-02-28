@@ -503,7 +503,7 @@ int process_upnphttp_http_query(int s, int iface)
 
     // read post message
     // legitimate http requests should be fairly small so reject anything too big
-    if (h->data_len > 2048)
+    if (h->data_len > MAX_POST_SIZE)
     {
         send_http_response(h, HTTP_BAD_REQUEST_400);
         goto close;

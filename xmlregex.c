@@ -58,6 +58,7 @@ struct cursor
     struct stream *st;
     int bytes_left;
     int chunked;
+    int total_read;
 };
 
 
@@ -111,11 +112,12 @@ static char read_char(struct cursor *xml)
 
         char *endptr;
         int chunklen = strtoll(&buf[0], &endptr, 16);
+        xml->total_read += chunklen;
         if (endptr == &buf[0] || *endptr != '\r')
             return '\0';
 
         if (stream_read(&buf[0], 1, xml->st) != 1 || buf[0] != '\n' || chunklen < 1
-            || chunklen > 2048)
+            || xml->total_read > MAX_POST_SIZE)
             return '\0';
 
         xml->bytes_left = chunklen;
@@ -157,6 +159,7 @@ void process_post_content(struct upnphttp *h)
     struct cursor xml;
 
     xml.st = h->st;
+    xml.total_read = 0;
     if (h->reqflags & FLAG_CHUNKED)
     {
         xml.chunked = FIRST_CHUNK;

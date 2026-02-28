@@ -28,6 +28,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#define MAX_POST_SIZE 2048
+
 struct upnphttp;
 
 void process_post_content(struct upnphttp *h);
