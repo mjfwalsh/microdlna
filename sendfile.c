@@ -41,7 +41,10 @@
 
 #include <sys/sendfile.h>
 
-#define sys_sendfile sendfile
+static inline int sys_sendfile(int sock, int sendfd, off_t *offset, off_t len)
+{
+    return sendfile(sock, sendfd, offset, (size_t)len);
+}
 
 #elif defined(__APPLE__)
 
@@ -100,7 +103,7 @@ void send_file(int socketfd, int sendfd, off_t offset, off_t end_offset)
 
             PRINT_LOG(E_DEBUG, "sendfile range %jd to %jd\n", (intmax_t)offset,
                       (intmax_t)send_size);
-            ret = sys_sendfile(socketfd, sendfd, &offset, (size_t)send_size);
+            ret = sys_sendfile(socketfd, sendfd, &offset, send_size);
             if (ret == -1)
             {
                 /* Client closed connection */
