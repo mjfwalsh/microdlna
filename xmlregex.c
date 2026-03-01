@@ -135,7 +135,8 @@ static void process_name_value_pair(struct upnphttp *h, const char *name,
 {
     if (strcmp(name, "ObjectID") == 0 || strcmp(name, "ContainerID") == 0)
     {
-        h->remote_dirpath = safe_strdup(value);
+        if (h->remote_dirpath == NULL)
+            h->remote_dirpath = safe_strdup(value);
     }
     else if (strcmp(name, "StartingIndex") == 0)
     {
