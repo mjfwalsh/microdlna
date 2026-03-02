@@ -510,7 +510,11 @@ int process_upnphttp_http_query(int s, int iface)
     }
     else if (h->data_len > 0 || h->reqflags & FLAG_CHUNKED)
     {
-        process_post_content(h);
+        if (!process_post_content(h))
+        {
+            send_http_response(h, HTTP_BAD_REQUEST_400);
+            goto close;
+        }
     }
 
     // Be strict on host header to prevent DNS rebinding attacks

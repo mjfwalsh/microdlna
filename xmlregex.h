@@ -32,4 +32,4 @@
 
 struct upnphttp;
 
-void process_post_content(struct upnphttp *h);
+int process_post_content(struct upnphttp *h);

@@ -59,6 +59,7 @@ struct cursor
     int bytes_left;
     int chunked;
     int total_read;
+    int error;
 };
 
 
@@ -80,54 +81,71 @@ static char read_char(struct cursor *xml)
     {
         switch (xml->chunked)
         {
+        // we have finished reading the Content-Length
         case NO_CHUNK:
             return '\0';
 
+        // look for the CRLF at the end of the chunk
         case MIDDLE_CHUNK:
-            if (stream_read(&buf[0], 2, xml->st) != 2)
-                return '\0';
-
-            if (buf[0] != '\r' || buf[1] != '\n')
-                return '\0';
+            if (stream_read(&buf[0], 2, xml->st) != 2
+                    || buf[0] != '\r' || buf[1] != '\n')
+                goto error;
             break;
 
+        // first chunk
         default:
         case FIRST_CHUNK:
             xml->chunked = MIDDLE_CHUNK;
             break;
         }
 
-        // read chunk header
+        // read hex number (max 3 chars) followed by CR
         int i = 0;
         while (i < 4)
         {
             if (stream_read(&buf[i], 1, xml->st) != 1)
-                return '\0';
+                goto error;
             if (buf[i] == '\r')
                 break;
             i++;
         }
         if (i == 4)
-            return '\0';
+            goto error;
 
         char *endptr;
         int chunklen = strtoll(&buf[0], &endptr, 16);
-        xml->total_read += chunklen;
-        if (endptr == &buf[0] || *endptr != '\r')
-            return '\0';
 
-        if (stream_read(&buf[0], 1, xml->st) != 1 || buf[0] != '\n' || chunklen < 1
-            || xml->total_read > MAX_POST_SIZE)
+        // validate number and check for trailing LF
+        if (chunklen < 0 || *endptr != '\r'
+                || stream_read(&buf[0], 1, xml->st) != 1
+                || buf[0] != '\n')
+            goto error;
+
+        // trailing chunk
+        if (chunklen == 0)
+        {
+            if (stream_read(&buf[0], 2, xml->st) != 2
+                    || buf[0] != '\r' || buf[1] != '\n')
+                goto error;
+
             return '\0';
+        }
+
+        // check total POST lengh
+        xml->total_read += chunklen;
+        if (xml->total_read > MAX_POST_SIZE)
+            goto error;
 
         xml->bytes_left = chunklen;
     }
 
     xml->bytes_left--;
-    if (stream_read(&buf[0], 1, xml->st) == 1)
+    if (stream_read(&buf[0], 1, xml->st) == 1 && buf[0] != '\0')
         return buf[0];
-    else
-        return '\0';
+
+error:
+    xml->error = 1;
+    return '\0';
 }
 
 static void process_name_value_pair(struct upnphttp *h, const char *name,
@@ -144,13 +162,13 @@ static void process_name_value_pair(struct upnphttp *h, const char *name,
         if (indx > 0)
             h->starting_index = indx;
     }
-    if (strcmp(name, "RequestedCount") == 0)
+    else if (strcmp(name, "RequestedCount") == 0)
     {
         h->requested_count = atoi(value);
     }
 }
 
-void process_post_content(struct upnphttp *h)
+int process_post_content(struct upnphttp *h)
 {
     int i;
     char c;
@@ -161,6 +179,7 @@ void process_post_content(struct upnphttp *h)
 
     xml.st = h->st;
     xml.total_read = 0;
+    xml.error = 0;
     if (h->reqflags & FLAG_CHUNKED)
     {
         xml.chunked = FIRST_CHUNK;
@@ -216,7 +235,7 @@ new_tag:
         }
         ele_value[i] = '\0';
         if (i == ELE_VALUE_SIZE - 1 || c == '\0')
-            break;
+            continue;
 
         // right trim
         do
@@ -243,4 +262,6 @@ new_tag:
             process_name_value_pair(h, ele_name, ele_value);
         }
     }
+
+    return !xml.error;
 }
