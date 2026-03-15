@@ -139,7 +139,7 @@ static void readoptionsfile(const char *optionsfile, const char *arg0);
 
 /* OpenAndConfHTTPSocket() :
  * setup the socket used to handle incoming HTTP connections. */
-static int open_and_conf_http_socket(int port)
+static int open_and_conf_http_socket()
 {
     int s = socket(PF_INET, SOCK_STREAM, 0);
 
@@ -154,9 +154,10 @@ static int open_and_conf_http_socket(int port)
         PRINT_LOG(E_ERROR, "setsockopt(http, SO_REUSEADDR): %d\n", errno);
 
     struct sockaddr_in listenname;
-    memset(&listenname, 0, sizeof(struct sockaddr_in));
+    socklen_t size = sizeof(struct sockaddr_in);
+    memset(&listenname, 0, size);
     listenname.sin_family = AF_INET;
-    listenname.sin_port = htons(port);
+    listenname.sin_port = htons(listening_port);
     listenname.sin_addr.s_addr = htonl(INADDR_ANY);
 
     if (bind(s, (struct sockaddr *)&listenname, sizeof(struct sockaddr_in)) < 0)
@@ -173,6 +174,13 @@ static int open_and_conf_http_socket(int port)
         return -1;
     }
 
+    // get assigned port when set to zero
+    if (listening_port == 0)
+    {
+        memset(&listenname, 0, size);
+        if (!getsockname(s, (struct sockaddr *)&listenname, &size))
+            listening_port = ntohs(listenname.sin_port);
+    }
     return s;
 }
 
@@ -263,7 +271,7 @@ static void process_option(int c, const char *arg_value, const char *arg_name,
 
     case 'p':                  // --port
         listening_port = atoi(arg_value);
-        if (listening_port < 1 || listening_port > 65535)
+        if (listening_port < 0 || listening_port > 65535)
             EXIT_ERROR("Invalid port %s.\n", arg_value);
         break;
 
@@ -517,7 +525,7 @@ static void init(int argc, char *const *argv)
         EXIT_ERROR("Failed to open socket for receiving SSDP. EXITING\n");
 
     /* open socket for HTTP connections. */
-    shttpl = open_and_conf_http_socket(listening_port);
+    shttpl = open_and_conf_http_socket();
     if (shttpl < 0)
         EXIT_ERROR("Failed to open socket for HTTP. EXITING\n");
 
