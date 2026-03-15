@@ -158,13 +158,15 @@ static void process_name_value_pair(struct upnphttp *h, const char *name,
     }
     else if (strcmp(name, "StartingIndex") == 0)
     {
-        int indx = atoi(value);
-        if (indx > 0)
-            h->starting_index = indx;
+        int n = atoi(value);
+        if (n > 0)
+            h->starting_index = n;
     }
     else if (strcmp(name, "RequestedCount") == 0)
     {
-        h->requested_count = atoi(value);
+        int n = atoi(value);
+        if (n > 0)
+            h->requested_count = n;
     }
 }
 

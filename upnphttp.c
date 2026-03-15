@@ -136,12 +136,11 @@ static void parse_http_header(struct upnphttp *h, char *name, char *value, int l
 {
     if (strcasecmp(name, "Content-Length") == 0)
     {
-        h->data_len = atoi(value);
-        if (h->data_len < 0)
-        {
-            PRINT_LOG(E_DEBUG, "Invalid Content-Length %d", h->data_len);
-            h->data_len = 0;
-        }
+        int n = atoi(value);
+        if (n >= 0 && n <= MAX_POST_SIZE)
+            h->data_len = n;
+        else
+            h->data_len = -1;
     }
     else if (strcasecmp(name, "SOAPAction") == 0)
     {
@@ -503,14 +502,11 @@ int process_upnphttp_http_query(int s, int iface)
 
     // read post message
     // legitimate http requests should be fairly small so reject anything too big
-    if (h->data_len > MAX_POST_SIZE)
+    if (h->data_len != 0 || h->reqflags & FLAG_CHUNKED)
     {
-        send_http_response(h, HTTP_BAD_REQUEST_400);
-        goto close;
-    }
-    else if (h->data_len > 0 || h->reqflags & FLAG_CHUNKED)
-    {
-        if (!process_post_content(h))
+      if ((h->data_len != 0 && h->reqflags & FLAG_CHUNKED)
+          || h->data_len < 0
+          || !process_post_content(h))
         {
             send_http_response(h, HTTP_BAD_REQUEST_400);
             goto close;
