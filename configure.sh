@@ -42,4 +42,8 @@ ${tab}strip /usr/local/bin/microdlnad
 ${tab}mkdir -p /usr/local/share/man/man8
 ${tab}cp microdlnad.8 /usr/local/share/man/man8
 
+.PHONY: test
+test: all
+${tab}@./test/test.py
+
 MAKEFILE
