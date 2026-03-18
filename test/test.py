@@ -10,7 +10,7 @@ import sys
 import threading
 from xml.etree.ElementTree import XML
 
-from utils.http import http_client
+from utils.http import http_client, one_shot_server
 
 # add lldb module to path
 sys.path.append(subprocess.check_output(["lldb", "-P"], encoding="utf8").strip())
@@ -131,7 +131,7 @@ def setUpModule():
 
     # start the server
     server = subprocess.Popen(
-        ["../microdlnad", "-D", "./root", "-gi", "lo0", "-p", f"{port}"],
+        ["../microdlnad", "-D", "./root", "-di", "lo0", "-p", f"{port}"],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -147,6 +147,7 @@ def setUpModule():
         m := re.search(r"HTTP listening on port ([0-9]+)", server.stdout.readline())
     )
     assert "Enabling interface" in server.stdout.readline()
+    os.set_blocking(server.stdout.fileno(), False)
 
     # save port
     port = int(m[1])
@@ -168,6 +169,12 @@ class Test(unittest.TestCase):
         global chunked
         register.clear()
         chunked = None
+
+        # clear server log
+        try:
+            server.stdout.read()
+        except BlockingIOError:
+            pass
 
     def test_send_valid_request(self):
         s = xml_request()
@@ -316,6 +323,7 @@ class Test(unittest.TestCase):
         r = s.read_http_response()
         r.close()
         self.assertEqual(r.status_code, 400)
+        self.assertIn("Missing or invalid host header", server.stdout.read())
 
     def test_invalid_host_two(self):
         s = xml_request("<ObjectID>0</ObjectID>", host="")
@@ -459,6 +467,47 @@ class Test(unittest.TestCase):
         r = s.read_http_response()
         self.assertEqual(r.status_code, 400)
         s.close()
+
+    def test_subscribe(self):
+        callback_server = one_shot_server()
+
+        s = http_client.send_request_head(
+            domain="127.0.0.1",
+            port=port,
+            method="SUBSCRIBE",
+            path="/evt/ContentDir",
+            headers={
+                "HOST": f"127.0.0.1:{port}",
+                "Callback": callback_server.get_address(),
+                "NT": "upnp:event",
+            },
+        )
+        r = s.read_http_response()
+        r.close()
+        self.assertEqual(r.status_code, 200)
+
+        callback = callback_server.close()
+        self.assertIsNotNone(callback)
+        self.assertEqual(callback.method, "NOTIFY")
+        self.assertEqual(callback.path, "/")
+        self.assertIn("debug: upnp_event_recv: (0bytes)", server.stdout.read())
+
+    def test_subscribe_bad_host(self):
+        s = http_client.send_request_head(
+            domain="127.0.0.1",
+            port=port,
+            method="SUBSCRIBE",
+            path="/evt/ContentDir",
+            headers={
+                "HOST": f"127.0.0.1:{port}.evil-rebinding-attack.com",
+                "Callback": "http://invalid/",
+                "NT": "upnp:event",
+            },
+        )
+        r = s.read_http_response()
+        r.close()
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("Missing or invalid host header", server.stdout.read())
 
 
 if __name__ == "__main__":
