@@ -60,7 +60,7 @@ static inline int sys_sendfile(int sock, int sendfd, off_t *offset, off_t len)
 
     *offset += len;
 
-    return ret;
+    return ret == 0 ? len : -1;
 }
 
 #elif defined(__FreeBSD__) || defined(__NetBSD__)
@@ -78,7 +78,7 @@ static inline int sys_sendfile(int sock, int sendfd, off_t *offset, off_t len)
 
     *offset += len;
 
-    return ret;
+    return ret == 0 ? len : -1;
 }
 
 #endif
