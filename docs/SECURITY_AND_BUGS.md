@@ -17,8 +17,14 @@ Pour chaque problème : **Correctif (appliqué)** décrit le correctif en place 
 - **`ele_name[20]`** : la boucle accepte jusqu’à 20 caractères (`while (i < 20 && ...)` avec `ele_name[i++] = c`). En sortie, `i` peut valoir 20, puis `ele_name[i] = '\0'` écrit en `ele_name[20]`, soit **hors du tableau** (indices valides 0..19).  
   → **Impact :** corruption mémoire, possible exécution de code à distance si exploitable.
 
+> [!NOTE]
+> This wasn't a bug. The value of i was checked at the line following the loop to make [sure it wasn't 20](https://github.com/mjfwalsh/microdlna/blob/7dbd1282ea8e4e729e02c667621dd09135d45d4b/xmlregex.c#L188). The following continue statement returns the function to where it was when it entered the loop with an uninitalised buffer and i set to 0.
+
 - **`ele_value[BUF_SIZE]`** (BUF_SIZE = 1024) : la boucle lit jusqu’à 1024 caractères (`while (i < BUF_SIZE && ...)` avec `ele_value[i++] = c`). Si exactement 1024 caractères sont lus, on sort avec `i == BUF_SIZE` sans jamais placer de `'\0'`. La valeur n’est pas passée à `process_name_value_pair` dans ce tour (à cause du `break`), mais les boucles suivantes réutilisent `ele_value` sans garantie de chaîne terminée. De plus, si la logique changeait ou en cas de réutilisation, **`ele_value[BUF_SIZE]`** serait le seul emplacement possible pour le `'\0'`, ce qui est hors limites.  
   → **Impact :** lecture hors buffer (strlen/strcmp) ou débordement si on ajoute un null ; risque d’abus via requêtes SOAP malformées.
+
+> [!NOTE]
+> As with the last one, the value of i was check on the line following the loop.
 
 **Correctif (appliqué) :**  
 - `ele_name` : buffer porté à `ELE_NAME_SIZE + 1` (21 octets), boucle limitée à `i < ELE_NAME_SIZE` ; le `'\0'` est écrit dans les limites.  
@@ -41,6 +47,9 @@ if (strncmp(expected_host, value, 30) == 0)
 La comparaison utilise **uniquement** les 30 premiers caractères. Un client peut envoyer un Host plus long dont le préfixe est identique à l’hôte attendu (ex. `192.168.1.1:2800.evil.com`).  
 → **Impact :** affaiblissement de la protection anti–DNS rebinding ; selon le réseau, possibilité d’usurpation ou d’abus.
 
+> [!NOTE]
+> The value of the expected_host is guarenteed to be a version 4 ip address plus port number, which together can't be longer than 21 chars. Accordingly strnlen won't go beyond 22 nevermind 30.
+
 **Correctif (appliqué) :**  
 - Construction de `expected_host` avec `expected_len` (longueur réelle).  
 - Acceptation du Host seulement si `(size_t)len >= expected_len`, les `expected_len` premiers caractères égaux à `expected_host`, et le caractère suivant (s’il existe) n’est pas un caractère d’hôte valide : il doit être `\0`, `\r`, `\n`, espace ou tab. Ainsi un Host du type `192.168.1.1:2800.evil.com` est rejeté.
@@ -53,6 +62,15 @@ La comparaison utilise **uniquement** les 30 premiers caractères. Un client peu
 
 `sanitise_path` normalise uniquement les séquences `..` et `.` dans le chemin ; il **ne résout pas les liens symboliques**. Si un fichier ou répertoire sous `media_dir` est un symlink pointant en dehors (ex. `media_dir/private` → `/etc`), un ObjectID ou une URL du type `private` ou `private/passwd` peut permettre de lister ou de servir des fichiers hors de `media_dir`.  
 → **Impact :** fuite de contenu (fichiers sensibles) si l’administrateur a créé des symlinks sous `media_dir`.
+
+> [!NOTE]
+> This is by design. It allows users to serve files from different directories.
+>
+> I would obviously recommend users don't use a directory with sensitive files as a home dir or symlink to ones which might do.
+>
+> I would also recommend using the --user option to run as a user with reduced privileges.
+>
+> But in any event micordlna will only list and serve files with one of the filename extensions listed in mime.c, all of which are media files.
 
 **TODO.**  
 Recommandation : interdire de suivre les symlinks (`openat(..., O_NOFOLLOW)`, `fstatat(..., AT_SYMLINK_NOFOLLOW)`) ou résoudre avec `realpath()` et vérifier que le résultat reste sous `media_dir`.
@@ -88,6 +106,9 @@ Le vrai risque est côté **appelant** : si le code qui utilise `get_directory_l
 **Correctif (appliqué) :**  
 - Si `*file_count == 0` après `readdir` : on ne fait plus `realloc(..., 0)` ; on fait `safe_realloc(..., sizeof(content_entry *))`, on pose `h->requested_count = 0` et on retourne `entries` (non NULL). L’appelant reçoit un tableau « vide » valide et n’itère pas.
 
+> [!NOTE]
+> Thanks for that one. I confess to have relied on the Mac man page which says "If size is zero and ptr is not NULL, a new, minimum sized object is allocated and the original object is freed." It is of course different on other systems.
+
 ---
 
 ### 2.2 `dirlist.c` — Débordement / overflow sur `requested_count` et indices
@@ -98,6 +119,9 @@ Le vrai risque est côté **appelant** : si le code qui utilise `get_directory_l
   `h->requested_count = *file_count - h->starting_index;`  
   Si `*file_count` et `h->starting_index` sont de type non signé et que le résultat est stocké dans un **int** (`requested_count`), un dépassement de capacité peut se produire (ex. `file_count` très grand, `starting_index` 0 → valeur négative ou tronquée).
 
+> [!NOTE]
+> This bug would require in excess of 2 billion files in a single directory, at which the program would fail due to memory exhaustion
+
 - La boucle  
   `for (int i = 0; i < h->requested_count; i++)`  
   et l’accès `entries[i + h->starting_index]` supposent que `starting_index + requested_count <= file_count`. Si `requested_count` est négatif (overflow), le comportement est indéfini.
@@ -105,6 +129,9 @@ Le vrai risque est côté **appelant** : si le code qui utilise `get_directory_l
 **Correctif (appliqué) :**  
 - Recalcul de `requested_count` : si `requested_count == -1` ou si `starting_index + requested_count > *file_count`, on pose `requested_count = min(*file_count - starting_index, INT_MAX)` (avec `#include <limits.h>`).  
 - Les boucles et `safe_realloc` utilisent des casts `(unsigned)h->requested_count` où nécessaire pour éviter des indices ou tailles incohérents.
+
+> [!NOTE]
+> This was a bug and could have affected the ability to serve large files. Thanks for the fix.
 
 ---
 
@@ -125,6 +152,9 @@ L’appel depuis `upnphttp.c` passe `h->req_range_end` (type **off_t**). Sur des
 - Signature modifiée en `void send_file(..., off_t offset, off_t end_offset)`.  
 - Dans `send_file`, `send_size` est en `off_t` ; à l’appel système Linux `sendfile(..., (size_t)send_size)` pour respecter le type du paramètre `count`.
 
+> [!NOTE]
+> As it happens size_t is part of the signatire of sendfile on linux, but I do get the point.
+
 ---
 
 ### 2.4 `getifaddr.c` — `set_interfaces_from_string` et `strsep`
@@ -132,6 +162,9 @@ L’appel depuis `upnphttp.c` passe `h->req_range_end` (type **off_t**). Sur des
 **Fichier :** `getifaddr.c`
 
 `strsep(&p, ",")` modifie la chaîne en remplaçant la virgule par `'\0'`. Les pointeurs stockés dans `ifaces[]` pointent tous dans le **même** bloc alloué (`ifaces[0]` au départ). `free_ifaces()` ne fait que `free(ifaces[0])` puis met tous les éléments à `NULL`, ce qui est correct (un seul bloc). En revanche, après `strsep`, si l’entrée est par exemple `"eth0,,eth1"`, on peut avoir des tokens vides ; il faudrait les ignorer pour éviter des noms d’interfaces vides.
+
+> [!NOTE]
+> An empty interface name doesn't do anything
 
 **Correctif (appliqué) :**  
 - Utilisation de la **valeur de retour** de `strsep(&p, ",")` pour obtenir chaque token (au lieu d’utiliser `p` après coup).  
@@ -153,6 +186,9 @@ char *escaped_string = safe_malloc(normal + 3 * to_escape + 1);
 ```
 
 Si la chaîne d’entrée est très longue, `normal + 3 * to_escape + 1` peut dépasser la capacité d’un **int** (overflow).
+
+> [!NOTE]
+> This would want to be a remarkably long url. You will probably find that the longest possible string this function has be deal with is 1 kiloyte.
 
 **Correctif (appliqué) :**  
 - Compteurs et taille en `size_t` (`normal`, `to_escape`, `escaped_size`).  
